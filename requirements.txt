@@ -1,2 +1,2 @@
-playwright==1.47.0
+camoufox[geoip]==0.4.11
 beautifulsoup4==4.12.3
