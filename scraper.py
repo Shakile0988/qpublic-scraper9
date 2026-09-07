@@ -132,7 +132,19 @@ def extract_report_data(html: str) -> dict:
     return result
 
 
-def is_hard_blocked(html: str) -> bool:
+def safe_content(page, retries=3, delay_ms=800):
+    """page.content() can throw if called while the page is mid-navigation
+    (e.g. right as a Cloudflare challenge redirects to the real page).
+    That's not a failure - just retry briefly."""
+    last_err = None
+    for _ in range(retries):
+        try:
+            return page.content()
+        except Exception as e:
+            last_err = e
+            page.wait_for_timeout(delay_ms)
+    # give up and surface the error to the caller
+    raise last_err
     """A permanent/hard Cloudflare block page - retrying won't help within
     the same attempt, only across attempts."""
     if not html:
@@ -173,7 +185,7 @@ def wait_out_challenge(page, max_wait_ms=20000, poll_ms=1500):
     no challenge to begin with."""
     elapsed = 0
     while elapsed < max_wait_ms:
-        html = page.content()
+        html = safe_content(page)
         if is_hard_blocked(html):
             raise Exception("BLOCKED_BY_CLOUDFLARE")
         if not is_transient_challenge(html):
@@ -248,7 +260,7 @@ def run_attempt(app_name: str, search_url: str, target_normalized: str, attempt_
             # bail out early only on a real (hard) block mid-wait; a
             # transient challenge here is fine, the poll loop will just
             # keep checking for the match once it clears
-            if elapsed % 5000 == 0 and is_hard_blocked(page.content()):
+            if elapsed % 5000 == 0 and is_hard_blocked(safe_content(page)):
                 raise Exception("BLOCKED_BY_CLOUDFLARE")
 
             match_result = page.evaluate(
@@ -291,7 +303,7 @@ def run_attempt(app_name: str, search_url: str, target_normalized: str, attempt_
                 break
 
         if not match_result.get("success"):
-            final_html = page.content()
+            final_html = safe_content(page)
             if is_hard_blocked(final_html):
                 raise Exception("BLOCKED_BY_CLOUDFLARE")
             if is_transient_challenge(final_html):
@@ -306,7 +318,7 @@ def run_attempt(app_name: str, search_url: str, target_normalized: str, attempt_
         except Exception:
             pass
 
-        html = page.content()
+        html = safe_content(page)
         if is_hard_blocked(html):
             raise Exception("BLOCKED_BY_CLOUDFLARE")
 
@@ -362,7 +374,7 @@ def main():
                 page.goto(search_url, timeout=30000)
                 page.screenshot(path="debug.png", full_page=True)
                 with open("debug.html", "w", encoding="utf-8") as f:
-                    f.write(page.content())
+                    f.write(safe_content(page))
         except Exception:
             pass
 
