@@ -208,7 +208,7 @@ def run_attempt(app_name: str, search_url: str, target_normalized: str, attempt_
     with Camoufox(
         headless=False,       # a real, visible browser window - looks the most human, fine on your own PC
         humanize=True,        # simulates realistic human mouse movement
-        geoip=True,           # matches fingerprint (timezone/locale) to a plausible real location
+        geoip=False,           # disabled: was causing an asyncio conflict on retries after a crash
         os=("windows",),
     ) as browser:
         page = browser.new_page()
