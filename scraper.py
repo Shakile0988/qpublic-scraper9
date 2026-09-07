@@ -132,22 +132,56 @@ def extract_report_data(html: str) -> dict:
     return result
 
 
-def is_blocked_page(html: str) -> bool:
-    """Detect a Cloudflare (or similar) block/challenge page."""
+def is_hard_blocked(html: str) -> bool:
+    """A permanent/hard Cloudflare block page - retrying won't help within
+    the same attempt, only across attempts."""
     if not html:
         return False
     lowered = html.lower()
     signals = [
         "attention required",
         "cf-error-details",
-        "cf-wrapper",
         "sorry, you have been blocked",
-        "checking your browser",
-        "challenges.cloudflare.com",
-        "cf-browser-verification",
-        "just a moment",
     ]
     return any(s in lowered for s in signals)
+
+
+def is_transient_challenge(html: str) -> bool:
+    """A temporary Cloudflare JS challenge page ('Just a moment...') that
+    normally clears itself within a few seconds - worth waiting for."""
+    if not html:
+        return False
+    lowered = html.lower()
+    signals = [
+        "just a moment",
+        "checking your browser",
+        "cf-browser-verification",
+        "challenges.cloudflare.com",
+    ]
+    return any(s in lowered for s in signals)
+
+
+def is_blocked_page(html: str) -> bool:
+    """Backwards-compatible combined check (used for the debug screenshot
+    fallback only)."""
+    return is_hard_blocked(html) or is_transient_challenge(html)
+
+
+def wait_out_challenge(page, max_wait_ms=20000, poll_ms=1500):
+    """If a transient Cloudflare challenge is showing, poll until it clears
+    or a hard block appears. Raises on hard block. Does nothing if there's
+    no challenge to begin with."""
+    elapsed = 0
+    while elapsed < max_wait_ms:
+        html = page.content()
+        if is_hard_blocked(html):
+            raise Exception("BLOCKED_BY_CLOUDFLARE")
+        if not is_transient_challenge(html):
+            return  # challenge cleared (or was never there)
+        page.wait_for_timeout(poll_ms)
+        elapsed += poll_ms
+    # Timed out still showing a challenge - treat as a (retryable) failure
+    raise Exception("CLOUDFLARE_CHALLENGE_TIMEOUT")
 
 
 def human_delay(min_ms=400, max_ms=1400):
@@ -168,9 +202,9 @@ def run_attempt(app_name: str, search_url: str, target_normalized: str, attempt_
         page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
         human_delay(1000, 2500)
 
-        html_check = page.content()
-        if is_blocked_page(html_check):
-            raise Exception("BLOCKED_BY_CLOUDFLARE")
+        # Give a transient "Just a moment..." challenge time to clear on
+        # its own instead of treating it as a hard block right away.
+        wait_out_challenge(page)
 
         # Terms and Conditions "Agree" button, if present
         try:
@@ -211,8 +245,10 @@ def run_attempt(app_name: str, search_url: str, target_normalized: str, attempt_
             page.wait_for_timeout(poll_interval_ms)
             elapsed += poll_interval_ms
 
-            # bail out early if we got blocked mid-wait
-            if elapsed % 5000 == 0 and is_blocked_page(page.content()):
+            # bail out early only on a real (hard) block mid-wait; a
+            # transient challenge here is fine, the poll loop will just
+            # keep checking for the match once it clears
+            if elapsed % 5000 == 0 and is_hard_blocked(page.content()):
                 raise Exception("BLOCKED_BY_CLOUDFLARE")
 
             match_result = page.evaluate(
@@ -256,8 +292,10 @@ def run_attempt(app_name: str, search_url: str, target_normalized: str, attempt_
 
         if not match_result.get("success"):
             final_html = page.content()
-            if is_blocked_page(final_html):
+            if is_hard_blocked(final_html):
                 raise Exception("BLOCKED_BY_CLOUDFLARE")
+            if is_transient_challenge(final_html):
+                raise Exception("CLOUDFLARE_CHALLENGE_TIMEOUT")
             raise Exception(f"EXACT PARCEL ID MATCH NOT FOUND: {PARCEL_ID}")
 
         print(f"[Attempt {attempt_num}] Matched result: {match_result.get('matchedText')}")
@@ -269,7 +307,7 @@ def run_attempt(app_name: str, search_url: str, target_normalized: str, attempt_
             pass
 
         html = page.content()
-        if is_blocked_page(html):
+        if is_hard_blocked(html):
             raise Exception("BLOCKED_BY_CLOUDFLARE")
 
         with open("report_debug.html", "w", encoding="utf-8") as f:
