@@ -145,6 +145,9 @@ def safe_content(page, retries=3, delay_ms=800):
             page.wait_for_timeout(delay_ms)
     # give up and surface the error to the caller
     raise last_err
+
+
+def is_hard_blocked(html: str) -> bool:
     """A permanent/hard Cloudflare block page - retrying won't help within
     the same attempt, only across attempts."""
     if not html:
