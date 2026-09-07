@@ -157,10 +157,10 @@ def human_delay(min_ms=400, max_ms=1400):
 def run_attempt(app_name: str, search_url: str, target_normalized: str, attempt_num: int) -> dict:
     """Runs a single scrape attempt. Raises Exception on failure/block."""
     with Camoufox(
-        headless="virtual",   # runs behind a real virtual display (Xvfb), harder to fingerprint than plain headless
+        headless=False,       # a real, visible browser window - looks the most human, fine on your own PC
         humanize=True,        # simulates realistic human mouse movement
         geoip=True,           # matches fingerprint (timezone/locale) to a plausible real location
-        os=("windows", "macos", "linux"),
+        os=("windows",),
     ) as browser:
         page = browser.new_page()
         page.set_default_timeout(60000)
@@ -319,7 +319,7 @@ def main():
         output = {"error": last_error}
         # best-effort debug artifacts using a fresh quick camoufox screenshot attempt
         try:
-            with Camoufox(headless="virtual") as browser:
+            with Camoufox(headless=False) as browser:
                 page = browser.new_page()
                 page.goto(search_url, timeout=30000)
                 page.screenshot(path="debug.png", full_page=True)
