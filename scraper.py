@@ -15,12 +15,20 @@ def normalize_parcel_id(value: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", value.strip().upper())
 
 
+def _capitalize_word(word: str) -> str:
+    # Handle hyphenated names like "Miami-Dade" -> "Miami-Dade"
+    return "-".join(part.capitalize() for part in word.split("-"))
+
+
 def to_app_name(county: str, state_code: str) -> str:
     clean = county.strip().lower()
     # Strip any trailing ", GA" / state text the user may have included
-    clean = re.split(r",", clean)[0]
+    clean = re.split(r",", clean)[0].strip()
+    # Remove a trailing/leading "county" word if the user included it,
+    # since we append "County" ourselves below (avoids "HallCountyCountyGA")
+    clean = re.sub(r"\bcounty\b", "", clean, flags=re.IGNORECASE)
     words = re.split(r"\s+", clean.strip())
-    camel = "".join(w.capitalize() for w in words if w)
+    camel = "".join(_capitalize_word(w) for w in words if w)
     return f"{camel}County{state_code.strip().upper()}"
 
 
