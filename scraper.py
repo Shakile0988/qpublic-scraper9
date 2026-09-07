@@ -187,51 +187,69 @@ def main():
             page.wait_for_timeout(900)
 
             parcel_id_for_search = PARCEL_ID.replace("-", "")
-            parcel_input.fill(parcel_id_for_search)
-            page.wait_for_timeout(1000)
 
-            # Click the parcel search button
-            search_btn = page.locator("a.tt-upm-parcelid-search-btn")
-            search_btn.first.click(timeout=3500)
-            page.wait_for_timeout(15000)
+            # Clear the field first, then type character-by-character so the
+            # site's typeahead/autocomplete JS (which listens for real
+            # keystrokes) actually fires and loads suggestions.
+            parcel_input.fill("")
+            parcel_input.press_sequentially(parcel_id_for_search, delay=120)
+            page.wait_for_timeout(1500)
 
-            # Find and click the exact match in the results/dropdown
-            match_result = page.evaluate(
-                """(target) => {
-                    function normalize(value) {
-                        return String(value || '')
-                            .trim()
-                            .toUpperCase()
-                            .replace(/[^A-Z0-9]/g, '');
-                    }
-                    const candidates = [...document.querySelectorAll('a, td')];
-                    let exactMatch = null;
-                    for (const el of candidates) {
-                        const text = String(el.textContent || '').trim();
-                        if (!text) continue;
-                        if (normalize(text) === target) {
-                            exactMatch = el;
-                            break;
+            # Click the parcel search button, if present
+            try:
+                search_btn = page.locator("a.tt-upm-parcelid-search-btn")
+                if search_btn.count() > 0:
+                    search_btn.first.click(timeout=3500)
+            except PWTimeout:
+                pass
+
+            # Poll for the exact match suggestion/result to appear, instead
+            # of a single fixed wait - the dropdown can take a few seconds.
+            match_result = {"success": False}
+            max_wait_ms = 25000
+            poll_interval_ms = 1000
+            elapsed = 0
+            while elapsed < max_wait_ms:
+                page.wait_for_timeout(poll_interval_ms)
+                elapsed += poll_interval_ms
+                match_result = page.evaluate(
+                    """(target) => {
+                        function normalize(value) {
+                            return String(value || '')
+                                .trim()
+                                .toUpperCase()
+                                .replace(/[^A-Z0-9]/g, '');
                         }
-                    }
-                    if (!exactMatch) {
-                        return { success: false };
-                    }
-                    const link = exactMatch.tagName.toLowerCase() === 'a'
-                        ? exactMatch
-                        : exactMatch.closest('a');
-                    if (link) {
-                        link.click();
-                    } else {
-                        exactMatch.click();
-                    }
-                    return {
-                        success: true,
-                        matchedText: String(exactMatch.textContent || '').trim()
-                    };
-                }""",
-                target_normalized,
-            )
+                        const candidates = [...document.querySelectorAll('a, td, li, div')];
+                        let exactMatch = null;
+                        for (const el of candidates) {
+                            const text = String(el.textContent || '').trim();
+                            if (!text || text.length > 40) continue;
+                            if (normalize(text) === target) {
+                                exactMatch = el;
+                                break;
+                            }
+                        }
+                        if (!exactMatch) {
+                            return { success: false };
+                        }
+                        const link = exactMatch.tagName.toLowerCase() === 'a'
+                            ? exactMatch
+                            : exactMatch.closest('a');
+                        if (link) {
+                            link.click();
+                        } else {
+                            exactMatch.click();
+                        }
+                        return {
+                            success: true,
+                            matchedText: String(exactMatch.textContent || '').trim()
+                        };
+                    }""",
+                    target_normalized,
+                )
+                if match_result.get("success"):
+                    break
 
             if not match_result.get("success"):
                 raise Exception(
