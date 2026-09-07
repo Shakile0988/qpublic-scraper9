@@ -18,18 +18,13 @@ on:
 
 jobs:
   scrape:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install system deps (Xvfb + fonts for virtual display)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
 
       - name: Install Python deps
         run: pip install -r requirements.txt
