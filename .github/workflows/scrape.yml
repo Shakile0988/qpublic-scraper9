@@ -1,0 +1,48 @@
+name: Scrape qPublic
+on:
+  workflow_dispatch:
+    inputs:
+      county_name:
+        description: 'County Name (e.g. Hall County)'
+        required: true
+      state_code:
+        description: 'State Code (e.g. GA, FL, SC)'
+        required: true
+      parcel_id:
+        description: 'Parcel ID'
+        required: true
+      webhook_url:
+        description: 'n8n Webhook URL to send result'
+        required: true
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Install Playwright browsers
+        run: playwright install --with-deps chromium
+      - name: Run scraper
+        env:
+          COUNTY_NAME: ${{ github.event.inputs.county_name }}
+          STATE_CODE: ${{ github.event.inputs.state_code }}
+          PARCEL_ID: ${{ github.event.inputs.parcel_id }}
+          WEBHOOK_URL: ${{ github.event.inputs.webhook_url }}
+        run: python scraper.py
+      - name: Upload debug files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-files
+          path: |
+            debug.png
+            debug.html
+            report_debug.html
+            output.json
+          if-no-files-found: ignore
