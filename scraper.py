@@ -221,19 +221,41 @@ def run_attempt(app_name: str, search_url: str, target_normalized: str, attempt_
         # its own instead of treating it as a hard block right away.
         wait_out_challenge(page)
 
-        # Terms and Conditions "Agree" button, if present
+        # Terms and Conditions modal, if present - search inside the actual
+        # dialog for anything that looks like an "Agree" button/link rather
+        # than relying on one guessed CSS class (which varies by county).
         try:
-            agree_btn = page.locator("a.button-1")
-            if agree_btn.count() > 0 and agree_btn.first.is_visible():
-                agree_btn.first.click()
-                human_delay(800, 1800)
+            dialog = page.locator(
+                'div[role="dialog"][aria-label="Terms and Conditions"], '
+                'div.modal.in, div.modal.show'
+            )
+            if dialog.count() > 0 and dialog.first.is_visible():
+                agree_btn = dialog.first.get_by_role(
+                    "button", name=re.compile("agree", re.I)
+                )
+                if agree_btn.count() == 0:
+                    agree_btn = dialog.first.locator("a, button").filter(
+                        has_text=re.compile("agree", re.I)
+                    )
+                if agree_btn.count() == 0:
+                    # last resort: the old known selector, forced through
+                    agree_btn = page.locator("a.button-1")
+
+                if agree_btn.count() > 0:
+                    agree_btn.first.click(timeout=5000, force=True)
+                    try:
+                        dialog.first.wait_for(state="hidden", timeout=8000)
+                    except Exception:
+                        # some sites just fade it out without fully
+                        # detaching it - give it a moment either way
+                        page.wait_for_timeout(1500)
         except Exception:
             pass
 
         # Find the Parcel ID search input
         parcel_input = page.locator("input[id$='_txtParcelID']")
         parcel_input.wait_for(state="visible", timeout=20000)
-        parcel_input.click()
+        parcel_input.click(timeout=10000, force=True)
         human_delay(400, 900)
 
         parcel_id_for_search = PARCEL_ID.replace("-", "")
